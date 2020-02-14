@@ -1,0 +1,80 @@
+---
+- name: Kubernetes nodes provision
+  hosts: all
+  become: yes
+  tasks:
+  - name: Prepare to install docker
+    package:
+      name:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - gnupg-agent
+        - software-properties-common
+      state: latest
+  - name: Install docker repository gpg key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+  - name: Install docker repository
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu bionic stable
+      state: present
+  - name: Install docker
+    package:
+      name:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+      state: latest
+  - name: Configure dockerd
+    template:
+      src: daemon.json.j2
+      dest: /etc/docker/daemon.json
+      mode: 0600
+  - name: create docker.service.d
+    file:
+      path: /etc/systemd/system/docker.service.d
+      state: directory
+      mode: '0755'
+  - name: reload and restart dockerd
+    systemd:
+      state: restarted
+      daemon_reload: yes
+      name: docker
+  - name: disable swap for kubelet
+    shell: 'swapoff -a'
+  - name: disable swap in fstab
+    shell: 'sed -i "s/swap//g" /etc/fstab'
+  - name: install legacy firewall packages
+    package:
+      name:
+        - iptables
+        - arptables
+        - ebtables
+      state: latest
+  - name: add google cloud gpg key
+    apt_key:
+      url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+      state: present
+  - name: add kubernetes repo
+    apt_repository:
+      repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+  - name: install kubelet, kubeadm, kubectl
+    package:
+      name:
+        - kubelet
+        - kubeadm
+        - kubectl
+      state: latest
+  - name: hold kubernetes packages
+    dpkg_selections:
+      name: "{{ item }}"
+      selection: hold
+    loop:
+      - kubelet
+      - kubeadm
+      - kubectl
+  - name: kubeadm config images pull
+    shell: kubeadm config images pull
